@@ -4,6 +4,6 @@ session "LangDesignImplVerif" = "HOL" +
     (* Foo *)
     (* Bar *)
   theories
-    (* Baz *)
+    IntArithVars
   document_files
     "root.tex"

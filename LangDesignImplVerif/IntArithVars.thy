@@ -1,7 +1,7 @@
 section "A Language of Integer Arithmetic and Variables"
 
 theory IntArithVars
-  imports Main "~~/src/HOL/Library/Finite_Map"
+  imports Main
 begin
   
 type_synonym name = nat

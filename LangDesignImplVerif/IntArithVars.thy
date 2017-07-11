@@ -60,11 +60,11 @@ fun S :: "stmt \<Rightarrow> state_xfr" where
       | Some n \<Rightarrow> Some (\<rho>(x\<mapsto>n), i))" |
   "S (Read x) (\<rho>, i) = (case i of [] \<Rightarrow> None
                      | Cons n i' \<Rightarrow> Some (\<rho>(x\<mapsto>n), i'))"
+  
+definition seq :: "('a \<Rightarrow> 'b option) \<Rightarrow> ('b \<Rightarrow> 'c option) \<Rightarrow> 'a \<Rightarrow> 'c option" where
+  "seq f1 f2 \<sigma> \<equiv> (case f1 \<sigma> of None \<Rightarrow> None | Some \<sigma>' \<Rightarrow> f2 \<sigma>')"
 
-definition seq :: "state_xfr \<Rightarrow> state_xfr \<Rightarrow> state_xfr" where
-  "seq f1 f2 s \<equiv> (case f1 s of None \<Rightarrow> None | Some s' \<Rightarrow> f2 s')"
-
-fun ret :: "state_xfr" where
+definition ret :: "state_xfr" where
   "ret \<sigma> = Some \<sigma>"
   
 fun Ss :: "stmt list \<Rightarrow> state_xfr" where
@@ -72,27 +72,23 @@ fun Ss :: "stmt list \<Rightarrow> state_xfr" where
   "Ss (s#ss) = seq (S s) (Ss ss)"
 
 fun B :: "block \<Rightarrow> state \<Rightarrow> (int \<times> input) option" where
-  "B (ss,e) (\<rho>, i) = 
-     (case Ss ss (\<rho>, i) of
-       None \<Rightarrow> None
-     | Some (\<rho>',i') \<Rightarrow> 
-       (case F e \<rho>' of None \<Rightarrow> None | Some n \<Rightarrow> Some (n, i')))"   
+  "B (ss,e) = seq (Ss ss) (\<lambda>(\<rho>,i). case F e \<rho> of None \<Rightarrow> None | Some n \<Rightarrow> Some (n,i))"
 
-lemma seq_some[simp]: "seq Some f = f"
-  unfolding seq_def apply (rule ext) apply auto done
+lemma seq_ret[simp]: "seq ret f = f"
+  unfolding seq_def ret_def apply (rule ext) apply auto done
 
 lemma seq_assoc[simp]: "seq (seq f1 f2) f3 = seq f1 (seq f2 f3)" 
-  unfolding seq_def apply (rule ext) apply auto apply (case_tac "f1 (a,b)") apply auto done
+  unfolding seq_def apply (rule ext) apply (case_tac "f1 \<sigma>") apply auto done
 
 lemma Ss_append_seq[simp]: "Ss (ss1@ss2) = seq (Ss ss1) (Ss ss2)"
   by (induction ss1) auto
     
-lemma Ss_none_seq[simp]: "Ss ss1 \<sigma> = None \<Longrightarrow> seq (Ss ss1) (Ss ss2) \<sigma> = None"
+lemma seq1_none[simp]: "f1 \<sigma> = None \<Longrightarrow> seq f1 f2 \<sigma> = None"
   by (simp add: seq_def)
     
-lemma Ss_some_seq[simp]: "Ss ss1 \<sigma> = Some \<sigma>' \<Longrightarrow> seq (Ss ss1) (Ss ss2) \<sigma> = (Ss ss2) \<sigma>'"
-  by (simp add: seq_def)
-
+lemma seq1_some[simp]: "f1 \<sigma> = Some \<sigma>' \<Longrightarrow> seq f1 f2 \<sigma> = f2 \<sigma>'"
+  by (simp add: seq_def)  
+    
 section "Compilation Pass: Flattening"
 
 fun atomize :: "fexp \<Rightarrow> nat \<Rightarrow> nat \<times> (stmt list) \<times> atom" where
@@ -109,9 +105,9 @@ fun flatten :: "exp \<Rightarrow> nat \<Rightarrow> nat \<times> block" where
   "flatten (EAdd e1 e2) k =
     (let (k1,ss1,e1') = flatten e1 k in
      let (k2,ss2,e2') = flatten e2 k1 in
-     let (k3,c3,a1) = atomize e1' k2 in
-     let (k4,c4,a2) = atomize e2' k3 in
-     (k4, ss1 @ ss2 @ c3 @ c4, FAdd a1 a2))" |
+     let (k3,ss3,a1) = atomize e1' k2 in
+     let (k4,ss4,a2) = atomize e2' k3 in
+     (k4, ss1 @ ss2 @ ss3 @ ss4, FAdd a1 a2))" |
   "flatten (EVar x) k = (k, [], Atom (AVar x))" |
   "flatten (ELet x e1 e2) k = 
     (let (k1,ss1,e1') = flatten e1 k in
@@ -130,8 +126,6 @@ lemma atomize_correct: "atomize e k = (k', ss, a) \<Longrightarrow> B ([], e) = 
   apply force
   apply simp apply clarify apply (rule ext) apply (case_tac x) apply simp
     apply (case_tac "A x2 aa") apply auto
-    apply (simp add: seq_def)
-    apply (simp add: seq_def)
   apply (rule ext) apply (case_tac x) apply (simp add: seq_def) 
     apply (case_tac "A x31 aa") apply (auto simp: seq_def)
     apply (case_tac "A x32 aa") apply (auto simp: seq_def)
@@ -184,6 +178,18 @@ next
   from 4 fne ENeg show ?case by auto      
 next
   case (EAdd e1 e2)
+  obtain k1 ss1 e1' where fe1: "flatten e1 k = (k1,ss1,e1')" by (case_tac "flatten e1 k") auto
+  obtain k2 ss2 e2' where fe2: "flatten e2 k1 = (k2,ss2,e2')" by (case_tac "flatten e2 k1") auto
+  obtain k3 ss3 a1 where ae1: "atomize e1' k2 = (k3,ss3,a1)" by (case_tac "atomize e1' k2") auto
+  obtain k4 ss4 a2 where ae2: "atomize e2' k3 = (k4,ss4,a2)" by (case_tac "atomize e2' k3") auto
+  from fe1 fe2 ae1 ae2 have fadd: "flatten (EAdd e1 e2) k = (k4, ss1 @ ss2 @ ss3 @ ss4, FAdd a1 a2)"
+    by simp
+  from fe1 EAdd have IH1: "E e1 \<rho> i = B (ss1, e1') (\<rho>, i)" by blast
+  from ae1 have 1: "B ([], e1') = B (ss3, Atom a1)" using atomize_correct by blast
+  from 1 have 2: "B (ss1@ss2, e1') (\<rho>, i) = B (ss1@ss2 @ ss3, Atom a1) (\<rho>, i)"
+    using B_append[of "[]" e1' ss3 "Atom a1" "ss1@ss2"] by simp
+  from IH1 2 have 3: "E e1 \<rho> i = B (ss1 @ ss2, Atom a1) (\<rho>, i)" by simp
+      
   then show ?case sorry
 next
   case (EVar x)

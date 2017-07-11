@@ -166,8 +166,6 @@ next
   obtain k1 e1 ss1 where fe: "flatten e k = (k1,ss1,e1)" by (case_tac "flatten e k") auto
   obtain k2 a ss2 where ae1: "atomize e1 k1 = (k2,ss2,a)" by (case_tac "atomize e1 k1") auto
   from fe ae1 ENeg have fne: "flatten (ENeg e) k = (k2, ss1@ss2, FNeg a)" by simp
-  from fne ENeg have ss: "ss = ss1 @ ss2" by simp
-  from fne ENeg have ep: "e' = FNeg a" by simp
   from fe ENeg have IH: "E e \<rho> i = B (ss1, e1) (\<rho>, i)" by blast
   from ae1 have 1: "B ([], e1) = B (ss2, Atom a)" using atomize_correct[of e1 k1] by blast
   from 1 have 2: "B (ss1, e1) (\<rho>, i) = B (ss1 @ ss2, Atom a) (\<rho>, i)"
@@ -183,7 +181,7 @@ next
     from this 3 show ?thesis  apply (case_tac "seq (Ss ss1) (Ss ss2) (\<rho>,i)") apply force apply auto
       apply (case_tac "A a aa") apply auto done
   qed
-  from 4 ss ep show ?case by blast      
+  from 4 fne ENeg show ?case by auto      
 next
   case (EAdd e1 e2)
   then show ?case sorry

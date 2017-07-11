@@ -137,6 +137,18 @@ lemma atomize_correct: "atomize e k = (k', ss, a) \<Longrightarrow> B ([], e) = 
     apply (case_tac "A x32 aa") apply (auto simp: seq_def)
   done
   
+lemma B_append: assumes 1: "B (ss2, e1) = B (ss2', e2)"
+  shows "B (ss1 @ ss2, e1) (\<rho>, i) = B (ss1 @ ss2', e2) (\<rho>, i)"
+proof (cases "Ss ss1 (\<rho>,i)")
+  case None
+  then show ?thesis by simp
+next
+  case (Some \<sigma>)
+  from Some obtain \<rho>' i' where Ss_ss1: "Ss ss1 (\<rho>,i) = Some (\<rho>',i')" by (cases \<sigma>) auto
+  from 1 have A: "B (ss2, e1) (\<rho>',i') = B (ss2', e2) (\<rho>',i')" by simp
+  from Ss_ss1 A show ?thesis by simp
+qed  
+    
 lemma flatten_correct: "flatten e k = (k', ss, e') \<Longrightarrow> E e \<rho> i = B (ss, e') (\<rho>, i)"
 proof (induction e arbitrary: k k' e' \<rho> i ss)
   case (EInt n)
@@ -158,44 +170,18 @@ next
   from fne ENeg have ep: "e' = FNeg a" by simp
   from fe ENeg have IH: "E e \<rho> i = B (ss1, e1) (\<rho>, i)" by blast
   from ae1 have 1: "B ([], e1) = B (ss2, Atom a)" using atomize_correct[of e1 k1] by blast
-  
-  have 2: "B (ss1, e1) (\<rho>, i) = B (ss1 @ ss2, Atom a) (\<rho>, i)"
-  proof (cases "Ss ss1 (\<rho>,i)")
-    case None
-    then show ?thesis by simp
-  next
-    case (Some \<sigma>)
-    from Some obtain \<rho>' i' where Ss_ss1: "Ss ss1 (\<rho>,i) = Some (\<rho>',i')" by (cases \<sigma>) auto
-    show ?thesis
-    proof (cases "F e1 \<rho>'")
-      case None
-      from this Ss_ss1 have 2: "B (ss1, e1) (\<rho>, i) = None" by simp
-      from None have 3: "B ([],e1) (\<rho>',i') = None" by simp
-      from 1 3 have 4: "B (ss2, Atom a) (\<rho>',i') = None" by simp
-      from Ss_ss1 4 have 5: "B (ss1 @ ss2, Atom a) (\<rho>,i) = None" by simp
-      from 2 5 show ?thesis by simp
-    next
-      case (Some n)
-      from this Ss_ss1 have 2: "B (ss1,e1) (\<rho>,i) = Some (n,i')" by simp
-      from Some have 3: "B ([],e1) (\<rho>',i') = Some (n,i')" by simp
-      from 1 3 have 4: "B (ss2, Atom a) (\<rho>',i') = Some (n,i')" by simp
-      from Ss_ss1 4 have 5: "B (ss1 @ ss2, Atom a) (\<rho>,i) = Some (n,i')" by simp
-      from 2 5 show ?thesis by simp
-    qed
-  qed
+  from 1 have 2: "B (ss1, e1) (\<rho>, i) = B (ss1 @ ss2, Atom a) (\<rho>, i)"
+    using B_append[of "[]" e1 ss2 "Atom a"] by simp
   from IH 2 have 3: "E e \<rho> i = B (ss1 @ ss2, Atom a) (\<rho>, i)" by simp
-  have "E e \<rho> i = None \<or> (\<exists> n i'. E e \<rho> i = Some (n, i'))" by (case_tac "E e \<rho> i") auto
-  from this have 4: "E (ENeg e) \<rho> i = B (ss1 @ ss2, FNeg a) (\<rho>, i)"
-  proof
-    assume Ee: "E e \<rho> i = None"
-    from Ee 3 show ?thesis
-      apply (case_tac "seq (Ss ss1) (Ss ss2) (\<rho>,i)") apply force
-      apply (case_tac aa) apply (case_tac "A a aaa") apply auto done      
-  next assume "\<exists> n i'. E e \<rho> i = Some (n, i')"
-    from this obtain n i' where Ee: "E e \<rho> i = Some (n,i')" by blast
-    from Ee 3 show ?thesis apply simp
-      apply (case_tac "seq (Ss ss1) (Ss ss2) (\<rho>,i)") apply force apply auto
-      apply (case_tac "A a aa") apply auto done      
+  have 4: "E (ENeg e) \<rho> i = B (ss1 @ ss2, FNeg a) (\<rho>, i)"
+  proof (cases "E e \<rho> i")
+    case None
+    from this 3 show ?thesis apply (case_tac "seq (Ss ss1) (Ss ss2) (\<rho>,i)") apply force
+      apply (case_tac aa) apply (case_tac "A a aaa") apply auto done
+  next
+    case (Some \<sigma>')
+    from this 3 show ?thesis  apply (case_tac "seq (Ss ss1) (Ss ss2) (\<rho>,i)") apply force apply auto
+      apply (case_tac "A a aa") apply auto done
   qed
   from 4 ss ep show ?case by blast      
 next

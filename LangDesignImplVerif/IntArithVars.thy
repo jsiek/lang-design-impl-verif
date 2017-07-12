@@ -113,6 +113,9 @@ lemma seq1_none[simp]: "f1 \<sigma> = None \<Longrightarrow> seq f1 f2 \<sigma> 
 lemma seq1_some[simp]: "f1 \<sigma> = Some \<sigma>' \<Longrightarrow> seq f1 f2 \<sigma> = f2 \<sigma>'"
   by (simp add: seq_def)  
 
+lemma seq_front: "f1 \<sigma> = f1' \<sigma>' \<Longrightarrow> seq f1 f2 \<sigma> = seq f1' f2 \<sigma>'"
+  by (simp add: seq_def) 
+  
 section "Compilation Pass: Flattening"
 
 fun flatten :: "exp \<Rightarrow> block" where
@@ -182,7 +185,7 @@ lemma Ss_result: "S s (\<rho>,i) = None \<or> (\<exists> v i'. S s (\<rho>,i) = 
   apply (case_tac i) apply auto
   done
 
-lemma shifts_append: "S s (\<rho>1@\<rho>3,i) = Some (v#(\<rho>1@\<rho>3),i') \<Longrightarrow>
+lemma shifts_append_some: "S s (\<rho>1@\<rho>3,i) = Some (v#(\<rho>1@\<rho>3),i') \<Longrightarrow>
     S (shifts (length \<rho>2) (length \<rho>1) s) (\<rho>1@\<rho>2@\<rho>3,i) = Some (v#(\<rho>1@\<rho>2@\<rho>3),i')"
   apply (cases s)
   -- "Push x1"
@@ -195,7 +198,30 @@ lemma shifts_append: "S s (\<rho>1@\<rho>3,i) = Some (v#(\<rho>1@\<rho>3),i') \<
   apply simp apply (case_tac i) apply auto
   done
 
-
+lemma shifts_append_none: "S s (\<rho>1@\<rho>3,i) = None \<Longrightarrow>
+   S (shifts (length \<rho>2) (length \<rho>1) s) (\<rho>1@\<rho>2@\<rho>3,i) = None"
+  apply (cases s)
+  apply simp apply (case_tac "F x1 (\<rho>1@\<rho>3)") 
+    using shiftf_append apply force
+    using shiftf_append apply force
+  apply simp apply (case_tac i) apply auto
+  done   
+    
+lemma shiftb_append: "B (ss,e) (\<rho>1@\<rho>3,i) = B (shiftb (length \<rho>2) (length \<rho>1) (ss,e)) (\<rho>1@\<rho>2@\<rho>3,i)"
+  apply (induction ss arbitrary: \<rho>1 \<rho>2 \<rho>3 i e)
+  using shifta_append apply force
+proof -
+  fix s ss and \<rho>1::env and \<rho>2::env and \<rho>3::env and i e
+  assume IH: "\<And>\<rho>1 \<rho>2 \<rho>3 i e. B (ss, e) (\<rho>1@\<rho>3, i) = B (shiftb (length \<rho>2) (length \<rho>1) (ss, e))
+            (\<rho>1@\<rho>2@\<rho>3, i)" 
+  let ?sp = "shifts (length \<rho>2) (length \<rho>1) s" 
+  have "B (s # ss, e) (\<rho>1@\<rho>3, i) = seq (Ss (s#ss)) (As e) (\<rho>1@\<rho>3, i)" by simp
+  also have "... = seq (S s) (seq (Ss ss) (As e)) (\<rho>1@\<rho>3, i)" by (simp add: seq_assoc)   
+      
+  show "B (s # ss, e) (\<rho>1 @ \<rho>3, i) = B (shiftb (length \<rho>2) (length \<rho>1) (s # ss, e)) (\<rho>1@\<rho>2@\<rho>3, i)"
+    sorry
+qed
+  
 section "Correctness of Flattening"
   
 lemma atomize_correct: "\<lbrakk> atomize e k = (k', ss, a) \<rbrakk> \<Longrightarrow> Fs e = seq (Ss ss) (Fs (Atom a))"

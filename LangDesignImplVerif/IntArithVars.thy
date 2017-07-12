@@ -184,6 +184,20 @@ lemma Ss_result: "S s (\<rho>,i) = None \<or> (\<exists> v i'. S s (\<rho>,i) = 
   apply (cases s) apply simp apply (case_tac "F x1 \<rho>") apply auto
   apply (case_tac i) apply auto
   done
+    
+lemma Sss_result: "Ss ss (\<rho>,i) = None \<or> (\<exists> \<rho>' i'. Ss ss (\<rho>,i) = Some (\<rho>'@\<rho>,i') \<and> length \<rho>' = length ss)"
+  apply (induction ss arbitrary: \<rho> i)
+  apply (force simp: ret_def)
+  apply (subgoal_tac "S a (\<rho>,i) = None \<or> (\<exists> v i'. S a (\<rho>,i) = Some (v#\<rho>,i'))")
+    prefer 2 apply (rule Ss_result)
+  apply (erule disjE) apply force
+  apply (erule exE)+ 
+  apply (subgoal_tac " Ss ss (v#\<rho>, i') = None \<or>
+             (\<exists>\<rho>' i''. Ss ss (v#\<rho>, i') = Some (\<rho>' @ (v#\<rho>), i'') \<and> length \<rho>' = length ss)")
+    prefer 2 apply blast
+    apply (erule disjE) apply force    
+    apply (rule disjI2) apply force
+  done
 
 lemma shifts_append_some: "S s (\<rho>1@\<rho>3,i) = Some (v#(\<rho>1@\<rho>3),i') \<Longrightarrow>
     S (shifts (length \<rho>2) (length \<rho>1) s) (\<rho>1@\<rho>2@\<rho>3,i) = Some (v#(\<rho>1@\<rho>2@\<rho>3),i')"
@@ -215,24 +229,26 @@ proof -
   assume IH: "\<And>\<rho>1 \<rho>2 \<rho>3 i e. B (ss, e) (\<rho>1@\<rho>3, i) = B (shiftb (length \<rho>2) (length \<rho>1) (ss, e))
             (\<rho>1@\<rho>2@\<rho>3, i)" 
   let ?sp = "shifts (length \<rho>2) (length \<rho>1) s" 
-  have "B (s # ss, e) (\<rho>1@\<rho>3, i) = seq (Ss (s#ss)) (As e) (\<rho>1@\<rho>3, i)" by simp
-  also have "... = seq (S s) (seq (Ss ss) (As e)) (\<rho>1@\<rho>3, i)" by (simp add: seq_assoc)   
-      
   show "B (s # ss, e) (\<rho>1 @ \<rho>3, i) = B (shiftb (length \<rho>2) (length \<rho>1) (s # ss, e)) (\<rho>1@\<rho>2@\<rho>3, i)"
-    sorry
+  proof (cases "S s (\<rho>1@\<rho>3,i)")
+    case None
+    from None have s_sp: "S ?sp (\<rho>1@\<rho>2@\<rho>3,i) = None" using shifts_append_none by blast
+    from None s_sp
+    show ?thesis apply simp apply (case_tac "shiftb (length \<rho>2) (Suc (length \<rho>1)) (ss, e)") by auto
+  next
+    case (Some \<sigma>)
+    from Some obtain v i' where s: "\<sigma> = (v#(\<rho>1@\<rho>3), i')" using Ss_result[of s "\<rho>1@\<rho>3" i] by auto
+    from Some s have s_sp: "S ?sp (\<rho>1@\<rho>2@\<rho>3,i) = Some (v#(\<rho>1@\<rho>2@\<rho>3),i')"
+      using shifts_append_some[of s \<rho>1 \<rho>3] by auto
+    from IH[of e "v#\<rho>1" \<rho>3 i' \<rho>2] s have
+      1: "B (ss,e) \<sigma> = B (shiftb(length \<rho>2)(length (v#\<rho>1))(ss,e)) ((v#\<rho>1)@\<rho>2@\<rho>3,i')" by simp
+    from s_sp 1 s Some 
+    show ?thesis apply simp apply (case_tac "shiftb (length \<rho>2) (Suc (length \<rho>1)) (ss, e)")
+        by (auto simp: seq_assoc) 
+  qed
 qed
   
 section "Correctness of Flattening"
-  
-lemma atomize_correct: "\<lbrakk> atomize e k = (k', ss, a) \<rbrakk> \<Longrightarrow> Fs e = seq (Ss ss) (Fs (Atom a))"
-  apply (cases e)
-  apply force
-  apply simp apply clarify apply (rule ext) apply (case_tac x) apply simp
-    apply (case_tac "A x2 aa") apply (auto simp: seq_assoc)
-  apply (rule ext) apply (case_tac x) apply (simp add: seq_def) 
-    apply (case_tac "A x31 aa") apply (auto simp: seq_def)
-    apply (case_tac "A x32 aa") apply (auto simp: seq_def)
-  done
   
 lemma B_append: assumes 1: "B (ss2, e1) = B (ss2', e2)"
   shows "B (ss1 @ ss2, e1) (\<rho>, i) = B (ss1 @ ss2', e2) (\<rho>, i)"
@@ -246,53 +262,73 @@ next
   from Ss_ss1 A show ?thesis by (simp add: seq_assoc)
 qed
     
-lemma flatten_correct: "flatten e k = (k', ss, e') \<Longrightarrow> E e \<rho> i = B (ss, e') (\<rho>, i)"
-proof (induction e arbitrary: k k' e' \<rho> i ss)
+lemma flatten_correct: "flatten e = (ss, e') \<Longrightarrow> E e \<rho> i = B (ss, e') (\<rho>, i)"
+proof (induction e arbitrary: e' \<rho> i ss)
   case (EInt n)
-  have 1: "E (EInt n) \<rho> i = Some (n,i)" by simp
-  have 2: "flatten (EInt n) k = (k, [], Atom (AInt n))" by simp
-  have 3: "B ([], Atom (AInt n)) (\<rho>, i) = Some (n, i)" by simp
-  from EInt 1 2 3 show ?case by simp
+  have "E (EInt n) \<rho> i = Some (n,i)" by simp
+  also have "... = B ([], AInt n) (\<rho>, i)" by simp
+  also have "... = B (flatten (EInt n)) (\<rho>,i)" by simp
+  also from EInt have "... = B (ss,e') (\<rho>,i)" by simp
+  finally show ?case .
 next
   case ERead
-  have 2: "flatten ERead k = (Suc k, [Read k], Atom (AVar k))" by simp
-  have 3: "E ERead \<rho> i = B ([Read k], Atom (AVar k)) (\<rho>, i)"
+  have "E ERead \<rho> i = B ([Read], AVar 0) (\<rho>, i)"
     by (cases i) (auto simp: seq_def seq_assoc) 
-  from ERead 2 3 show ?case by simp
+  also have "... = B (flatten ERead) (\<rho>,i)" by simp
+  also from ERead have "... = B (ss,e') (\<rho>,i)" by simp 
+  finally show ?case .
 next
-  case (ENeg e k k' e' \<rho> i ss)
-  obtain k1 e1 ss1 where fe: "flatten e k = (k1,ss1,e1)" by (case_tac "flatten e k") auto
-  obtain k2 a ss2 where ae1: "atomize e1 k1 = (k2,ss2,a)" by (case_tac "atomize e1 k1") auto
-  from fe ae1 ENeg have fne: "flatten (ENeg e) k = (k2, ss1@ss2, FNeg a)" by simp
-  from fe ENeg have IH: "E e \<rho> i = B (ss1, e1) (\<rho>, i)" by blast
-  from ae1 have 1: "B ([], e1) = B (ss2, Atom a)" using atomize_correct[of e1 k1] by blast
-  from 1 have 2: "B (ss1, e1) (\<rho>, i) = B (ss1 @ ss2, Atom a) (\<rho>, i)"
-    using B_append[of "[]" e1 ss2 "Atom a"] by simp
-  from IH 2 have 3: "E e \<rho> i = B (ss1 @ ss2, Atom a) (\<rho>, i)" by simp
-  from 3 have 4: "E (ENeg e) \<rho> i = B (ss1 @ ss2, FNeg a) (\<rho>, i)"
-    apply (cases "seq (Ss ss1) (Ss ss2) (\<rho>,i)") apply auto
-    apply (case_tac "A a aa") apply auto done
-  from 4 fne ENeg show ?case by auto      
-next
-  case (EAdd e1 e2)
-  obtain k1 ss1 e1' where fe1: "flatten e1 k = (k1,ss1,e1')" by (case_tac "flatten e1 k") auto
-  obtain k2 ss2 e2' where fe2: "flatten e2 k1 = (k2,ss2,e2')" by (case_tac "flatten e2 k1") auto
-  obtain k3 ss3 a1 where ae1: "atomize e1' k2 = (k3,ss3,a1)" by (case_tac "atomize e1' k2") auto
-  obtain k4 ss4 a2 where ae2: "atomize e2' k3 = (k4,ss4,a2)" by (case_tac "atomize e2' k3") auto
-  from fe1 fe2 ae1 ae2 have fadd: "flatten (EAdd e1 e2) k = (k4, ss1 @ ss2 @ ss3 @ ss4, FAdd a1 a2)"
-    by simp
-  from fe1 EAdd have IH1: "E e1 \<rho> i = B (ss1, e1') (\<rho>, i)" by blast
-  from ae1 have 1: "B ([], e1') = B (ss3, Atom a1)" using atomize_correct by blast
-  from 1 have 2: "B (ss1@ss2, e1') (\<rho>, i) = B (ss1@ss2 @ ss3, Atom a1) (\<rho>, i)"
-    using B_append[of "[]" e1' ss3 "Atom a1" "ss1@ss2"] by simp
-  from IH1 2 have 3: "E e1 \<rho> i = B (ss1 @ ss2, Atom a1) (\<rho>, i)" by simp
+  case (EPrim f e1 e2 e' \<rho> i ss) 
+  obtain ss1 a1 where fe1: "flatten e1 = (ss1,a1)" by (case_tac "flatten e1") simp
+  obtain ss2 a2 where fe2: "flatten e2 = (ss2,a2)" by (case_tac "flatten e2") simp
+  obtain a1' where a1p: "a1' = shifta (length ss2) 0 a1" by auto
+  obtain ss2' a2' where sb: "shiftb (length ss1) 0 (ss2,a2) = (ss2',a2')"
+    apply (case_tac "shiftb (length ss1) 0 (ss2,a2)") by auto
+  from fe1 fe2 a1p sb
+  have fp: "flatten (EPrim f e1 e2) = (ss1@ss2'@[Push (FPrim f a1' a2')], AVar 0)" by simp
+
+  from EPrim fe1 have IH1: "E e1 \<rho> i = B (ss1,a1) (\<rho>,i)" by simp
+  show ?case
+  proof (cases "E e1 \<rho> i")
+    case None
+    then show ?thesis sorry
+  next
+    case (Some r1)
+    from Some obtain n1 i' where Ee1: "E e1 \<rho> i = Some (n1,i')" by (cases r1) simp
+    from IH1 Ee1 Sss_result[of ss1 \<rho> i] obtain \<rho>1 i1 where Sss1: "Ss ss1 (\<rho>,i) = Some (\<rho>1@\<rho>,i1)" and 
+      Aa1: "As a1 (\<rho>1@\<rho>,i1) = Some (n1,i')" and lr1_ss1: "length \<rho>1 = length ss1"
+        apply (case_tac "Ss ss1 (\<rho>,i)") apply (auto simp: seq_def) done
+    from fe2 EPrim have IH2: "E e2 \<rho> i' = B (ss2,a2) (\<rho>,i')" by simp
+    show ?thesis
+    proof (cases "E e2 \<rho> i'")
+      case None
+      then show ?thesis sorry
+    next
+      case (Some r2)
+      from Some obtain n2 i'' where Ee2: "E e2 \<rho> i' = Some (n2,i'')" by (cases r2) simp
+      from Ee2 IH2 Sss_result[of ss2 \<rho> i'] obtain \<rho>2 i2 where Sss2: "Ss ss2 (\<rho>,i') = Some (\<rho>2@\<rho>,i2)"
+        and Aa2: "As a2 (\<rho>2@\<rho>,i2) = Some (n2,i'')" and lr2_ss2:"length \<rho>2 = length ss2" 
+          apply (case_tac "Ss ss2 (\<rho>,i')") apply (auto simp: seq_def) done
       
-  then show ?case sorry
+      from sb lr2_ss2 shiftb_append[of ss2 a2 "[]" \<rho> i' \<rho>2]
+      have "True" by simp 
+          
+      from Ee1 Ee2 have Ep: "E (EPrim f e1 e2) \<rho> i = Some (f n1 n2, i'')" by simp
+      from fp
+      have "B (flatten (EPrim f e1 e2)) (\<rho>, i)
+            = B (ss1@ss2'@[Push (FPrim f a1' a2')], AVar 0) (\<rho>, i)" by simp
+      also have "... = (seq (Ss ss1) (seq (Ss ss2') (seq (Ss [Push (FPrim f a1' a2')]) (As (AVar 0))))) (\<rho>,i)" 
+        by (simp add: seq_assoc)
+      then show ?thesis sorry
+    qed
+  qed
+    
+  have "E (EPrim f e1 e2) \<rho> i = B (flatten (EPrim f e1 e2)) (\<rho>, i)" sorry
 next
   case (EVar x)
   then show ?case sorry
 next
-  case (ELet x1a e1 e2)
+  case (ELet e1 e2)
   then show ?case sorry
 qed
 

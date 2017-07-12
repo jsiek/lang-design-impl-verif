@@ -93,9 +93,9 @@ fun shifts :: "nat \<Rightarrow> nat \<Rightarrow> stmt \<Rightarrow> stmt" wher
   "shifts k c (Read) = Read" |
   "shifts k c (Push e) = Push (shiftf k c e)"
 
-fun shiftss :: "nat \<Rightarrow> nat \<Rightarrow> stmt list \<Rightarrow> stmt list" where
-  "shiftss k c [] = []" |
-  "shiftss k c (s#ss) = (shifts k c s)#(shiftss k (Suc c) ss)"
+fun shiftb :: "nat \<Rightarrow> nat \<Rightarrow> block \<Rightarrow> block" where
+  "shiftb k c ([], e) = ([], shifta k c e)" |
+  "shiftb k c (s#ss, e) = (let (ss',e') = shiftb k (Suc c) (ss,e) in ((shifts k c s)#ss', e'))"
 
 lemma seq_ret[simp]: "seq ret f = f"
   unfolding seq_def ret_def apply (rule ext) apply auto done
@@ -120,13 +120,15 @@ fun flatten :: "exp \<Rightarrow> block" where
   "flatten (EPrim f e1 e2) =
     (let (ss1,a1) = flatten e1 in
      let (ss2,a2) = flatten e2 in
-     let a1' = shifta (length ss2) 0 a1 in
-     (ss1 @ ss2 @ [Push (FPrim f a1' a2)], AVar 0))" |
+     let (_,a1') = shiftb (length ss2) 0 (ss1,a1) in
+     let (ss2',a2') = shiftb (length ss1) 0 (ss2,a2) in
+     (ss1 @ ss2' @ [Push (FPrim f a1' a2')], AVar 0))" |
   "flatten (EVar x) = ([], AVar x)" |
   "flatten (ELet e1 e2) = 
     (let (ss1,a1) = flatten e1 in
      let (ss2,a2) = flatten e2 in
-     (ss1 @ (Push (Atom a1)) # ss2, a2))"
+     let (ss2',a2') = shiftb (length ss1) 0 (ss2,a2) in
+     (ss1 @ (Push (Atom a1)) # ss2', a2'))"
 
 fun flatten_program :: "exp \<Rightarrow> block" where
   "flatten_program e = (let (ss,e') = flatten e in (ss, e'))" 

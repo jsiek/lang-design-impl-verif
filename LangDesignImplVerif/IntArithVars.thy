@@ -297,7 +297,9 @@ next
     from Some obtain n1 i' where Ee1: "E e1 \<rho> i = Some (n1,i')" by (cases r1) simp
     from IH1 Ee1 Sss_result[of ss1 \<rho> i] obtain \<rho>1 i1 where Sss1: "Ss ss1 (\<rho>,i) = Some (\<rho>1@\<rho>,i1)" and 
       Aa1: "As a1 (\<rho>1@\<rho>,i1) = Some (n1,i')" and lr1_ss1: "length \<rho>1 = length ss1"
-        apply (case_tac "Ss ss1 (\<rho>,i)") apply (auto simp: seq_def) done
+      apply (case_tac "Ss ss1 (\<rho>,i)") apply (auto simp: seq_def) done
+        
+    
     from fe2 EPrim have IH2: "E e2 \<rho> i' = B (ss2,a2) (\<rho>,i')" by simp
     show ?thesis
     proof (cases "E e2 \<rho> i'")
@@ -310,9 +312,9 @@ next
         and Aa2: "As a2 (\<rho>2@\<rho>,i2) = Some (n2,i'')" and lr2_ss2:"length \<rho>2 = length ss2" 
           apply (case_tac "Ss ss2 (\<rho>,i')") apply (auto simp: seq_def) done
       
-      from sb lr2_ss2 shiftb_append[of ss2 a2 "[]" \<rho> i' \<rho>2]
-      have "True" by simp 
-          
+      from sb lr1_ss1 shiftb_append[of ss2 a2 "[]" "\<rho>" i1 \<rho>1]
+      have "B (ss2, a2) ([] @ \<rho>, i1) = B (ss2',a2') (\<rho>1@\<rho>,i1)" by simp 
+      
       from Ee1 Ee2 have Ep: "E (EPrim f e1 e2) \<rho> i = Some (f n1 n2, i'')" by simp
       from fp
       have "B (flatten (EPrim f e1 e2)) (\<rho>, i)

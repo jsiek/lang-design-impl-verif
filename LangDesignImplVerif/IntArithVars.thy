@@ -95,7 +95,8 @@ fun shifts :: "nat \<Rightarrow> nat \<Rightarrow> stmt \<Rightarrow> stmt" wher
 
 fun shiftb :: "nat \<Rightarrow> nat \<Rightarrow> block \<Rightarrow> block" where
   "shiftb k c ([], e) = ([], shifta k c e)" |
-  "shiftb k c (s#ss, e) = (let (ss',e') = shiftb k (Suc c) (ss,e) in ((shifts k c s)#ss', e'))"
+  "shiftb k c (s#ss, e) = (let (ss',e') = shiftb k (Suc c) (ss,e)
+                           in ((shifts k c s)#ss', e'))"
 
 lemma seq_ret[simp]: "seq ret f = f"
   unfolding seq_def ret_def apply (rule ext) apply auto done
@@ -120,14 +121,14 @@ fun flatten :: "exp \<Rightarrow> block" where
   "flatten (EPrim f e1 e2) =
     (let (ss1,a1) = flatten e1 in
      let (ss2,a2) = flatten e2 in
-     let (_,a1') = shiftb (length ss2) 0 (ss1,a1) in
+     let a1' = shifta (length ss2) 0 a1 in
      let (ss2',a2') = shiftb (length ss1) 0 (ss2,a2) in
      (ss1 @ ss2' @ [Push (FPrim f a1' a2')], AVar 0))" |
   "flatten (EVar x) = ([], AVar x)" |
   "flatten (ELet e1 e2) = 
     (let (ss1,a1) = flatten e1 in
      let (ss2,a2) = flatten e2 in
-     let (ss2',a2') = shiftb (length ss1) 0 (ss2,a2) in
+     let (ss2',a2') = shiftb (length ss1) 1 (ss2,a2) in
      (ss1 @ (Push (Atom a1)) # ss2', a2'))"
 
 fun flatten_program :: "exp \<Rightarrow> block" where
@@ -153,8 +154,48 @@ definition P1 :: exp where
 
 value "E P1 [] []" 
 value "flatten_program P1"
-value "B (flatten_program P1) ([],[])"   
-  
+value "B (flatten_program P1) ([],[])" 
+
+section "Lemmas regarding shift"
+
+lemma nth_append1[simp]: "n < length \<rho>1 \<Longrightarrow> (\<rho>1@\<rho>2)!n = \<rho>1!n"
+  apply (induction \<rho>1 arbitrary: \<rho>2 n)
+  apply force
+  apply (case_tac n) apply simp apply simp done
+
+lemma nth_append2[simp]: "n \<ge> length \<rho>1 \<Longrightarrow> (\<rho>1@\<rho>2)!n = \<rho>2!(n - length \<rho>1)"
+  apply (induction \<rho>1 arbitrary: \<rho>2 n)
+  apply force
+  apply (case_tac n) apply simp apply simp done
+ 
+lemma shifta_append: "A e (\<rho>1@\<rho>3) = A (shifta (length \<rho>2) (length \<rho>1) e) (\<rho>1@\<rho>2@\<rho>3)"
+  by (cases e) auto
+    
+lemma shiftf_append: "F e (\<rho>1@\<rho>3) = F (shiftf (length \<rho>2) (length \<rho>1) e) (\<rho>1@\<rho>2@\<rho>3)"
+  apply (cases e)
+  using shifta_append apply force
+  apply simp apply (case_tac "A x22 (\<rho>1@\<rho>3)") apply auto using shifta_append apply auto
+  done
+
+lemma Ss_result: "S s (\<rho>,i) = None \<or> (\<exists> v i'. S s (\<rho>,i) = Some (v#\<rho>,i'))"
+  apply (cases s) apply simp apply (case_tac "F x1 \<rho>") apply auto
+  apply (case_tac i) apply auto
+  done
+
+lemma shifts_append: "S s (\<rho>1@\<rho>3,i) = Some (v#(\<rho>1@\<rho>3),i') \<Longrightarrow>
+    S (shifts (length \<rho>2) (length \<rho>1) s) (\<rho>1@\<rho>2@\<rho>3,i) = Some (v#(\<rho>1@\<rho>2@\<rho>3),i')"
+  apply (cases s)
+  -- "Push x1"
+  apply simp apply (case_tac "F x1 (\<rho>1@\<rho>3)") 
+    using shiftf_append apply force   
+    apply simp apply (subgoal_tac "F x1 (\<rho>1@\<rho>3) = F (shiftf (length \<rho>2) (length \<rho>1) x1) (\<rho>1@\<rho>2@\<rho>3)")
+    prefer 2 using shiftf_append apply blast 
+    apply simp
+  -- "Read"
+  apply simp apply (case_tac i) apply auto
+  done
+
+
 section "Correctness of Flattening"
   
 lemma atomize_correct: "\<lbrakk> atomize e k = (k', ss, a) \<rbrakk> \<Longrightarrow> Fs e = seq (Ss ss) (Fs (Atom a))"

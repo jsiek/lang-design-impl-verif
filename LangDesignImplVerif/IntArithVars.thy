@@ -313,9 +313,10 @@ next
           apply (case_tac "Ss ss2 (\<rho>,i')") apply (auto simp: seq_def) done
       
       from sb lr1_ss1 shiftb_append[of ss2 a2 "[]" "\<rho>" i1 \<rho>1]
-      have "B (ss2, a2) ([] @ \<rho>, i1) = B (ss2',a2') (\<rho>1@\<rho>,i1)" by simp 
+      have "B (ss2, a2) (\<rho>, i1) = B (ss2',a2') (\<rho>1@\<rho>,i1)" by simp
       
       from Ee1 Ee2 have Ep: "E (EPrim f e1 e2) \<rho> i = Some (f n1 n2, i'')" by simp
+
       from fp
       have "B (flatten (EPrim f e1 e2)) (\<rho>, i)
             = B (ss1@ss2'@[Push (FPrim f a1' a2')], AVar 0) (\<rho>, i)" by simp

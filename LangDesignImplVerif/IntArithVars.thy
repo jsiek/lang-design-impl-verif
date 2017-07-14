@@ -92,7 +92,11 @@ fun shiftf :: "nat \<Rightarrow> nat \<Rightarrow> fexp \<Rightarrow> fexp" wher
 fun shifts :: "nat \<Rightarrow> nat \<Rightarrow> stmt \<Rightarrow> stmt" where
   "shifts k c (Read) = Read" |
   "shifts k c (Push e) = Push (shiftf k c e)"
-
+  
+fun shiftss :: "nat \<Rightarrow> nat \<Rightarrow> stmt list \<Rightarrow> stmt list" where
+  "shiftss k c [] = []" |
+  "shiftss k c (s#ss) = (let ss' = shiftss k (Suc c) ss in (shifts k c s)#ss')"
+  
 fun shiftb :: "nat \<Rightarrow> nat \<Rightarrow> block \<Rightarrow> block" where
   "shiftb k c ([], e) = ([], shifta k c e)" |
   "shiftb k c (s#ss, e) = (let (ss',e') = shiftb k (Suc c) (ss,e)
@@ -220,6 +224,38 @@ lemma shifts_append_none: "S s (\<rho>1@\<rho>3,i) = None \<Longrightarrow>
     using shiftf_append apply force
   apply simp apply (case_tac i) apply auto
   done   
+
+lemma shiftss_append_some: assumes Ss_ss: "Ss ss (\<rho>1@\<rho>3,i) = Some (\<rho>@\<rho>1@\<rho>3, i')"
+  shows "Ss (shiftss (length \<rho>2) (length \<rho>1) ss) (\<rho>1@\<rho>2@\<rho>3,i) = Some (\<rho>@\<rho>1@\<rho>2@\<rho>3,i')"
+  using Ss_ss
+proof (induction ss arbitrary: \<rho> \<rho>1 \<rho>2 \<rho>3 i i')
+  case Nil
+  then show ?case by (simp add: ret_def)
+next
+  case (Cons s ss)
+  show ?case
+  proof (cases "S s (\<rho>1@\<rho>3,i)")
+    case None
+    from Cons None show ?thesis using shifts_append_none by auto
+  next
+    case (Some a)
+    let ?s0 = "(\<rho>1@\<rho>3,i)"
+    from Some obtain v i1 where S_s: "S s (\<rho>1@\<rho>3,i) = Some (v#\<rho>1@\<rho>3, i1)"
+      using Ss_result[of s "\<rho>1@\<rho>3" i] by auto
+    let ?s1 = "(v#\<rho>1@\<rho>3, i1)"
+    let ?s2 = "(\<rho>@\<rho>1@\<rho>3,i')"
+    from Cons(2) S_s obtain \<rho>0 where S_ss: "Ss ss ?s1 = Some ?s2"
+      and r: "\<rho>=\<rho>0@[v]" using Sss_result[of ss "v#\<rho>1@\<rho>3" i1] by auto 
+    
+    let ?sp = "shifts (length \<rho>2) (length \<rho>1) s" and ?ssp = "(shiftss (length \<rho>2)(length(v#\<rho>1)) ss)"
+    let ?s0p = "(\<rho>1@\<rho>2@\<rho>3, i)" and ?s1p = "(v#\<rho>1@\<rho>2@\<rho>3,i1)" and ?s2p = "(\<rho>@\<rho>1@\<rho>2@\<rho>3,i')"
+
+    from S_s have S_sp: "S ?sp ?s0p = Some ?s1p" using shifts_append_some by auto
+    from S_ss r have "Ss ss ((v # \<rho>1) @ \<rho>3, i1) = Some (\<rho>0 @ (v # \<rho>1) @ \<rho>3, i')" by simp
+    from this r Cons(1)[of "v#\<rho>1" \<rho>3 i1 \<rho>0 i' \<rho>2] have S_ssp: "Ss ?ssp ?s1p = Some ?s2p" by simp
+    from S_sp S_ssp r show ?thesis by simp
+  qed
+qed
     
 lemma shiftb_append: "B (ss,e) (\<rho>1@\<rho>3,i) = B (shiftb (length \<rho>2) (length \<rho>1) (ss,e)) (\<rho>1@\<rho>2@\<rho>3,i)"
   apply (induction ss arbitrary: \<rho>1 \<rho>2 \<rho>3 i e)
@@ -282,8 +318,9 @@ next
   obtain ss1 a1 where fe1: "flatten e1 = (ss1,a1)" by (case_tac "flatten e1") simp
   obtain ss2 a2 where fe2: "flatten e2 = (ss2,a2)" by (case_tac "flatten e2") simp
   obtain a1' where a1p: "a1' = shifta (length ss2) 0 a1" by auto
-  obtain ss2' a2' where sb: "shiftb (length ss1) 0 (ss2,a2) = (ss2',a2')"
-    apply (case_tac "shiftb (length ss1) 0 (ss2,a2)") by auto
+  obtain ss2' where ss2p: "shiftss (length ss1) 0 ss2 = ss2'" by auto
+  obtain a2' where a2p: "shifta (length ss1) (length ss2) a2 = a2'" by auto
+      
   from fe1 fe2 a1p sb
   have fp: "flatten (EPrim f e1 e2) = (ss1@ss2'@[Push (FPrim f a1' a2')], AVar 0)" by simp
 
@@ -295,11 +332,12 @@ next
   next
     case (Some r1)
     from Some obtain n1 i' where Ee1: "E e1 \<rho> i = Some (n1,i')" by (cases r1) simp
-    from IH1 Ee1 Sss_result[of ss1 \<rho> i] obtain \<rho>1 i1 where Sss1: "Ss ss1 (\<rho>,i) = Some (\<rho>1@\<rho>,i1)" and 
-      Aa1: "As a1 (\<rho>1@\<rho>,i1) = Some (n1,i')" and lr1_ss1: "length \<rho>1 = length ss1"
-      apply (case_tac "Ss ss1 (\<rho>,i)") apply (auto simp: seq_def) done
-        
-    
+    let ?s0 = "(\<rho>,i)"
+    from IH1 Ee1 Sss_result[of ss1 \<rho> i] obtain \<rho>1 where Sss1: "Ss ss1 (\<rho>,i) = Some (\<rho>1@\<rho>,i')" and 
+      Aa1: "As a1 (\<rho>1@\<rho>,i') = Some (n1,i')" and lr1_ss1: "length \<rho>1 = length ss1"
+      apply (case_tac "Ss ss1 (\<rho>,i)") 
+      apply (auto simp: seq_def) apply (case_tac "A a1 (\<rho>''@\<rho>)") apply auto done  
+    let ?s1 = "(\<rho>1@\<rho>,i')"
     from fe2 EPrim have IH2: "E e2 \<rho> i' = B (ss2,a2) (\<rho>,i')" by simp
     show ?thesis
     proof (cases "E e2 \<rho> i'")
@@ -308,13 +346,19 @@ next
     next
       case (Some r2)
       from Some obtain n2 i'' where Ee2: "E e2 \<rho> i' = Some (n2,i'')" by (cases r2) simp
-      from Ee2 IH2 Sss_result[of ss2 \<rho> i'] obtain \<rho>2 i2 where Sss2: "Ss ss2 (\<rho>,i') = Some (\<rho>2@\<rho>,i2)"
-        and Aa2: "As a2 (\<rho>2@\<rho>,i2) = Some (n2,i'')" and lr2_ss2:"length \<rho>2 = length ss2" 
-          apply (case_tac "Ss ss2 (\<rho>,i')") apply (auto simp: seq_def) done
+      from Ee2 IH2 Sss_result[of ss2 \<rho> i'] obtain \<rho>2 where Sss2: "Ss ss2 (\<rho>,i') = Some (\<rho>2@\<rho>,i'')"
+        and Aa2: "As a2 (\<rho>2@\<rho>,i'') = Some (n2,i'')" and lr2_ss2:"length \<rho>2 = length ss2" 
+        apply (case_tac "Ss ss2 (\<rho>,i')") apply (auto simp: seq_def)
+        apply (case_tac "A a2 (\<rho>''@\<rho>)") apply auto done
+      let ?s2 = "(\<rho>2@\<rho>1@\<rho>, i'')"
       
-      from sb lr1_ss1 shiftb_append[of ss2 a2 "[]" "\<rho>" i1 \<rho>1]
-      have "B (ss2, a2) (\<rho>, i1) = B (ss2',a2') (\<rho>1@\<rho>,i1)" by simp
+      from Sss2 ss2p lr1_ss1 lr2_ss2 shiftss_append_some[of ss2 \<rho>1 \<rho> i' \<rho>2 i'' "[]"]
+      have "Ss ss2' ?s1 = Some ?s2" apply simp sorry
+
+      from sb lr1_ss1 shiftb_append[of ss2 a2 "[]" "\<rho>" i' \<rho>1]
+      have Bss2: "B (ss2, a2) (\<rho>, i') = B (ss2',a2') (\<rho>1@\<rho>,i')" by simp
       
+          
       from Ee1 Ee2 have Ep: "E (EPrim f e1 e2) \<rho> i = Some (f n1 n2, i'')" by simp
 
       from fp

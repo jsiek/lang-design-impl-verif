@@ -96,12 +96,16 @@ fun shifts :: "nat \<Rightarrow> nat \<Rightarrow> stmt \<Rightarrow> stmt" wher
 fun shiftss :: "nat \<Rightarrow> nat \<Rightarrow> stmt list \<Rightarrow> stmt list" where
   "shiftss k c [] = []" |
   "shiftss k c (s#ss) = (let ss' = shiftss k (Suc c) ss in (shifts k c s)#ss')"
-  
+
+(*
 fun shiftb :: "nat \<Rightarrow> nat \<Rightarrow> block \<Rightarrow> block" where
   "shiftb k c ([], e) = ([], shifta k c e)" |
   "shiftb k c (s#ss, e) = (let (ss',e') = shiftb k (Suc c) (ss,e)
                            in ((shifts k c s)#ss', e'))"
-
+*)
+fun shiftb :: "nat \<Rightarrow> nat \<Rightarrow> block \<Rightarrow> block" where
+  "shiftb k c (ss,e) = (let ss' = shiftss k c ss in (ss', shifta k (c + length ss) e))"  
+  
 lemma seq_ret[simp]: "seq ret f = f"
   unfolding seq_def ret_def apply (rule ext) apply auto done
 
@@ -128,7 +132,7 @@ fun flatten :: "exp \<Rightarrow> block" where
   "flatten (EPrim f e1 e2) =
     (let (ss1,a1) = flatten e1 in
      let (ss2,a2) = flatten e2 in
-     let a1' = shifta (length ss2) 0 a1 in
+     let a1' = shifta (length ss2) (length ss1) a1 in
      let (ss2',a2') = shiftb (length ss1) 0 (ss2,a2) in
      (ss1 @ ss2' @ [Push (FPrim f a1' a2')], AVar 0))" |
   "flatten (EVar x) = ([], AVar x)" |
@@ -256,7 +260,8 @@ next
     from S_sp S_ssp r show ?thesis by simp
   qed
 qed
-    
+
+(*
 lemma shiftb_append: "B (ss,e) (\<rho>1@\<rho>3,i) = B (shiftb (length \<rho>2) (length \<rho>1) (ss,e)) (\<rho>1@\<rho>2@\<rho>3,i)"
   apply (induction ss arbitrary: \<rho>1 \<rho>2 \<rho>3 i e)
   using shifta_append apply force
@@ -283,7 +288,8 @@ proof -
         by (auto simp: seq_assoc) 
   qed
 qed
-  
+*)
+
 section "Correctness of Flattening"
   
 lemma B_append: assumes 1: "B (ss2, e1) = B (ss2', e2)"
@@ -317,12 +323,12 @@ next
   case (EPrim f e1 e2 e' \<rho> i ss) 
   obtain ss1 a1 where fe1: "flatten e1 = (ss1,a1)" by (case_tac "flatten e1") simp
   obtain ss2 a2 where fe2: "flatten e2 = (ss2,a2)" by (case_tac "flatten e2") simp
-  obtain a1' where a1p: "a1' = shifta (length ss2) 0 a1" by auto
+  obtain a1' where a1p: "a1' = shifta (length ss2) (length ss1) a1" by auto
   obtain ss2' where ss2p: "shiftss (length ss1) 0 ss2 = ss2'" by auto
   obtain a2' where a2p: "shifta (length ss1) (length ss2) a2 = a2'" by auto
       
-  from fe1 fe2 a1p sb
-  have fp: "flatten (EPrim f e1 e2) = (ss1@ss2'@[Push (FPrim f a1' a2')], AVar 0)" by simp
+  from fe1 fe2 a1p ss2p a2p
+  have fp: "flatten (EPrim f e1 e2) = (ss1@ss2'@[Push (FPrim f a1' a2')], AVar 0)" by simp 
 
   from EPrim fe1 have IH1: "E e1 \<rho> i = B (ss1,a1) (\<rho>,i)" by simp
   show ?case
